@@ -1,0 +1,75 @@
+services:
+  # ==========================================
+  # API GATEWAY (Borda de Entrada)
+  # ==========================================
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastify-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - HOST=0.0.0.0
+      - LOG_LEVEL=info
+      - JWT_SECRET=super-secret-gateway-master-key-32ch!
+      - JWT_ISSUER=fastify-api-gateway
+      - USERS_SERVICE_URL=http://users-service:3001
+      - ORDERS_SERVICE_URL=http://orders-service:3002
+    depends_on:
+      users-service:
+        condition: service_healthy
+      orders-service:
+        condition: service_started
+    networks:
+      - platform-mesh
+
+  # ==========================================
+  # UPSTREAM MOCK 1: Users Service
+  # ==========================================
+  users-service:
+    image: node:22-alpine
+    container_name: upstream-users-service
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: sh -c "corepack enable && pnpm install && npx tsx src/mock/upstream-server.ts"
+    environment:
+      - PORT=3001
+      - JWT_SECRET=super-secret-gateway-master-key-32ch!
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/catalog/items"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - platform-mesh
+
+  # ==========================================
+  # UPSTREAM MOCK 2: Orders Service
+  # ==========================================
+  orders-service:
+    image: node:22-alpine
+    container_name: upstream-orders-service
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: sh -c "corepack enable && pnpm install && npx tsx src/mock/upstream-server.ts"
+    environment:
+      - PORT=3002
+      - JWT_SECRET=super-secret-gateway-master-key-32ch!
+    ports:
+      - "3002:3002"
+    networks:
+      - platform-mesh
+
+networks:
+  platform-mesh:
+    driver: bridge

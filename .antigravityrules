@@ -1,0 +1,23 @@
+# Antigravity Workspace Directives
+
+## Perfil do Engenheiro
+- Stack: TypeScript 5.x, Node.js (Fastify), PostgreSQL, Redis, Docker, Vitest.
+- Padrões: Clean Architecture, SOLID, Fail-Fast, Validação defensiva com Zod.
+- Filosofia de Código: Nenhuma dependência externa dentro de entidades ou use-cases de domínio.
+
+## Regras de Operação da IA
+1. Implementação estrita por fases: Nunca gere banco, rotas e regras de uma vez só.
+2. Contrato Primeiro: Defina tipos, interfaces e schemas Zod antes de escrever lógica.
+3. Test-Driven: Para cada caso de uso, estruture os testes unitários no Vitest primeiro com mocks de repositório em memória.
+4. Resiliência: Todo acesso I/O (DB, Redis, Redes) precisa de tratamento de erro explícito, timeouts e logs estruturados.
+5. Zero placeholders: Não deixe comentários como `// TODO: implement later` em trechos críticos.
+
+# Context Isolation & Scope Boundary
+
+## Restrição Estrita de Diretório (Root Boundary)
+- O escopo de execução deste agente está estritamente limitado à raiz deste repositório e seus subdiretórios imediatos (`./`).
+- É TERMINANTEMENTE PROIBIDO:
+  1. Acessar caminhos relativos superiores (`../`, `../../`).
+  2. Ler, indexar, referenciar ou listar arquivos fora deste diretório de projeto.
+  3. Sugerir imports, tipos ou dependências compartilhadas com projetos paralelos no mesmo workspace.
+- Caso precise de contexto externo inexistente neste repositório, solicite que o usuário forneça a interface explicitamente em vez de procurar em diretórios vizinhos.
