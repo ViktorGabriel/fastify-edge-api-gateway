@@ -2,7 +2,6 @@ import fp from "fastify-plugin";
 import fastifyHttpProxy from "@fastify/http-proxy";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { RouteProxyDefinition } from "../types/index.js";
-import { env } from "../config/env.js";
 
 export interface ProxyRouterOptions {
   routes: RouteProxyDefinition[];
@@ -14,10 +13,12 @@ export interface ProxyRouterOptions {
  * Itera sobre o catálogo central routes.config.ts e registra proxies individuais
  * de alta performance via @fastify/http-proxy:
  * 1. Intercepta a rota baseada no 'prefix'.
- * 2. Valida o token JWT no 'preHandler' caso 'authRequired' seja verdadeiro.
- * 3. Previne Header Spoofing deletando headers internos vindos do cliente externo.
- * 4. Enriquece os headers com 'x-request-id', 'x-user-id' e metadados de observabilidade.
- * 5. Faz stream da requisição e resposta diretamente com o serviço Upstream.
+ * 2. Valida o método HTTP configurado (405 se inválido).
+ * 3. Valida o token JWT no 'preHandler' caso 'authRequired' seja verdadeiro.
+ * 4. Aplica o Rate Limiting customizado (Sliding Window via Redis Lua) por rota e chave (IP ou User ID).
+ * 5. Previne Header Spoofing deletando headers internos vindos do cliente externo.
+ * 6. Enriquece os headers com 'x-request-id', 'x-user-id' e metadados de observabilidade.
+ * 7. Faz stream da requisição e resposta diretamente com o serviço Upstream.
  */
 export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: ProxyRouterOptions) => {
   const routes = opts.routes || [];
@@ -47,9 +48,18 @@ export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: Proxy
           // 2. Interceptação e Autenticação de Token JWT
           if (route.authRequired) {
             await fastify.authenticate(request, reply);
+            if (reply.sent) return; // Se falhou a autenticação (401), encerra aqui
           } else {
             // Em rota pública, tenta extrair caso o cliente envie o token
             await fastify.tryExtractUser(request);
+          }
+
+          // 3. Aplicação do Middleware de Rate Limiting (Sliding Window Redis Lua)
+          if (fastify.applyRateLimit) {
+            const isAllowed = await fastify.applyRateLimit(request, reply, route);
+            if (!isAllowed || reply.sent) {
+              return; // Bloqueado por 429 Too Many Requests
+            }
           }
         },
         replyOptions: {
@@ -112,7 +122,7 @@ export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: Proxy
     });
 
     fastify.log.info(
-      `[Gateway Route Registered] ${route.prefix} -> ${route.upstream}${route.rewritePrefix ?? ""} (Auth: ${route.authRequired})`
+      `[Gateway Route Registered] ${route.prefix} -> ${route.upstream}${route.rewritePrefix ?? ""} (Auth: ${route.authRequired}, RateLimit: ${route.rateLimit ? `${route.rateLimit.limit}req/${route.rateLimit.windowMs}ms` : "None"})`
     );
   }
 });

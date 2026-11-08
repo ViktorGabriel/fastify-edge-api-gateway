@@ -19,6 +19,39 @@ export interface JwtUserPayload {
 }
 
 /**
+ * Estratégia de extração da chave para o Rate Limiting
+ * - "ip": limita com base estrita no IP do cliente
+ * - "user": limita com base no ID do usuário autenticado (JWT sub)
+ * - "user-or-ip": usa o ID do usuário se autenticado, caso contrário faz fallback para o IP
+ */
+export type RateLimitKeyStrategy = "ip" | "user" | "user-or-ip";
+
+/**
+ * Configuração de Rate Limiting por rota
+ */
+export interface RateLimitConfig {
+  /** Quantidade máxima de requisições permitidas na janela */
+  limit: number;
+  /** Tamanho da janela móvel deslizante em milissegundos (ex: 60000 = 1 min) */
+  windowMs: number;
+  /** Estratégia de identificação do cliente (padrão: "user-or-ip") */
+  keyStrategy?: RateLimitKeyStrategy;
+  /** Prefixo opcional para isolamento de cotas */
+  keyPrefix?: string;
+}
+
+/**
+ * Resultado da avaliação do script Lua no Redis
+ */
+export interface RateLimitResult {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  retryAfter: number;
+  resetAfter: number;
+}
+
+/**
  * Definição declarativa de uma rota de proxy no API Gateway
  */
 export interface RouteProxyDefinition {
@@ -32,6 +65,8 @@ export interface RouteProxyDefinition {
   rewritePrefix?: string;
   /** Se a rota exige token JWT válido no cabeçalho Authorization */
   authRequired: boolean;
+  /** Configuração declarativa de Rate Limiting via Redis Sliding Window */
+  rateLimit?: RateLimitConfig;
   /** Timeout em milissegundos para a chamada ao upstream */
   timeoutMs?: number;
   /** Métodos HTTP permitidos para esta rota (se omitido, aceita todos) */

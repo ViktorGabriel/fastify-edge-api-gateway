@@ -12,6 +12,10 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, "JWT_SECRET deve ter no mínimo 16 caracteres para segurança de produção").default("super-secret-gateway-master-key-32ch!"),
   JWT_ISSUER: z.string().default("fastify-api-gateway"),
   
+  // Redis para Rate Limiting Distribuído e Cache de Borda
+  REDIS_URL: z.string().default("redis://127.0.0.1:6379"),
+  REDIS_KEY_PREFIX: z.string().default("gateway:ratelimit:"),
+
   // Upstream URLs configuráveis por ambiente
   USERS_SERVICE_URL: z.string().url().default("http://127.0.0.1:3001"),
   ORDERS_SERVICE_URL: z.string().url().default("http://127.0.0.1:3002"),

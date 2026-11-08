@@ -24,11 +24,14 @@
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "fastify-plugin": "^6.0.1",
+    "ioredis": "^6.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/ioredis-mock": "^8.2.8",
     "@types/node": "^22.13.10",
     "@vitest/coverage-v8": "^3.0.8",
+    "ioredis-mock": "^8.13.1",
     "tsup": "^8.4.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",

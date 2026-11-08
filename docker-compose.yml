@@ -1,5 +1,23 @@
 services:
   # ==========================================
+  # REDIS (Sliding Window Rate Limiter Engine)
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: gateway-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+    networks:
+      - platform-mesh
+
+  # ==========================================
   # API GATEWAY (Borda de Entrada)
   # ==========================================
   api-gateway:
@@ -17,9 +35,12 @@ services:
       - LOG_LEVEL=info
       - JWT_SECRET=super-secret-gateway-master-key-32ch!
       - JWT_ISSUER=fastify-api-gateway
+      - REDIS_URL=redis://redis:6379
       - USERS_SERVICE_URL=http://users-service:3001
       - ORDERS_SERVICE_URL=http://orders-service:3002
     depends_on:
+      redis:
+        condition: service_healthy
       users-service:
         condition: service_healthy
       orders-service:

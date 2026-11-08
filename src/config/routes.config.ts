@@ -9,6 +9,7 @@ import { env } from "./env.js";
  * - upstream: destino do tráfego do microsserviço.
  * - rewritePrefix: mapeamento de path para o upstream.
  * - authRequired: intercepta e valida JWT antes do proxy upstream.
+ * - rateLimit: política de contenção por Sliding Window via Redis Lua.
  * - timeoutMs: resiliência e circuit protection contra saturação.
  */
 export const routesConfig: RouteProxyDefinition[] = [
@@ -23,6 +24,12 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: false,
     allowedMethods: ["POST", "GET"],
     timeoutMs: 10000,
+    // Proteção contra brute force e credential stuffing (por IP)
+    rateLimit: {
+      limit: 5,
+      windowMs: 60000, // 5 requisições por minuto por IP
+      keyStrategy: "ip",
+    },
     description: "Autenticação, login e registro público de usuários",
     tags: ["auth", "public"],
   },
@@ -34,6 +41,12 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: true,
     allowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     timeoutMs: 10000,
+    // Cota de perfil por usuário autenticado
+    rateLimit: {
+      limit: 100,
+      windowMs: 60000, // 100 requisições por minuto por User ID
+      keyStrategy: "user-or-ip",
+    },
     description: "Gestão de perfis e contas - Requer JWT e propaga x-user-id",
     tags: ["users", "authenticated"],
   },
@@ -49,6 +62,12 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: false,
     allowedMethods: ["GET"],
     timeoutMs: 8000,
+    // Catálogo aberto com alta vazão
+    rateLimit: {
+      limit: 200,
+      windowMs: 60000,
+      keyStrategy: "ip",
+    },
     description: "Catálogo de produtos aberto ao público",
     tags: ["catalog", "public"],
   },
@@ -60,6 +79,12 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: true,
     allowedMethods: ["GET", "POST", "PUT", "DELETE"],
     timeoutMs: 15000,
+    // Proteção contra spam de checkout e concorrência abusiva por User ID
+    rateLimit: {
+      limit: 20,
+      windowMs: 60000,
+      keyStrategy: "user",
+    },
     description: "Criação e consulta de pedidos - Requer JWT e propaga x-user-id",
     tags: ["orders", "authenticated"],
   },
@@ -75,6 +100,11 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: true,
     allowedMethods: ["GET", "POST"],
     timeoutMs: 20000,
+    rateLimit: {
+      limit: 10,
+      windowMs: 60000,
+      keyStrategy: "user",
+    },
     description: "Operações de faturamento e notas fiscais protegidas",
     tags: ["billing", "financial", "authenticated"],
   },
