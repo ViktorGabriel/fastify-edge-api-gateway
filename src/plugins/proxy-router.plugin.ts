@@ -15,10 +15,11 @@ export interface ProxyRouterOptions {
  * 1. Intercepta a rota baseada no 'prefix'.
  * 2. Valida o método HTTP configurado (405 se inválido).
  * 3. Valida o token JWT no 'preHandler' caso 'authRequired' seja verdadeiro.
- * 4. Aplica o Rate Limiting customizado (Sliding Window via Redis Lua) por rota e chave (IP ou User ID).
- * 5. Previne Header Spoofing deletando headers internos vindos do cliente externo.
- * 6. Enriquece os headers com 'x-request-id', 'x-user-id' e metadados de observabilidade.
- * 7. Faz stream da requisição e resposta diretamente com o serviço Upstream.
+ * 4. Aplica o Rate Limiting customizado (Sliding Window via Redis Lua) por rota e chave.
+ * 5. Avalia o Circuit Breaker (CLOSED / OPEN / HALF-OPEN) para isolar serviços degradados.
+ * 6. Previne Header Spoofing deletando headers internos vindos do cliente externo.
+ * 7. Enriquece os headers com 'x-request-id', 'x-user-id' e metadados de observabilidade.
+ * 8. Faz stream de alta vazão da requisição e resposta diretamente com o serviço Upstream.
  */
 export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: ProxyRouterOptions) => {
   const routes = opts.routes || [];
@@ -26,6 +27,13 @@ export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: Proxy
   for (const route of routes) {
     // Encapsula cada registro de proxy em um escopo filho para isolamento total
     await fastify.register(async (scope) => {
+      // Hook executado após o término da resposta para contabilizar métricas do Circuit Breaker
+      scope.addHook("onResponse", async (_request: FastifyRequest, reply: FastifyReply) => {
+        if (fastify.recordCircuitBreakerResult) {
+          fastify.recordCircuitBreakerResult(route, reply.statusCode, false);
+        }
+      });
+
       scope.register(fastifyHttpProxy, {
         upstream: route.upstream,
         prefix: route.prefix,
@@ -61,6 +69,14 @@ export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: Proxy
               return; // Bloqueado por 429 Too Many Requests
             }
           }
+
+          // 4. Avaliação do Circuit Breaker (Resiliência de Upstream / Fail-Fast)
+          if (fastify.applyCircuitBreaker) {
+            const canProceed = await fastify.applyCircuitBreaker(request, reply, route);
+            if (!canProceed || reply.sent) {
+              return; // Bloqueado por 503 Service Unavailable (Circuito OPEN)
+            }
+          }
         },
         replyOptions: {
           rewriteRequestHeaders: (originalReq, headers) => {
@@ -68,7 +84,6 @@ export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: Proxy
 
             // ========================================================
             // SEGURANÇA: PREVENÇÃO DE HEADER SPOOFING
-            // Remove quaisquer headers de identidade forjados pelo cliente externo
             // ========================================================
             delete forwardedHeaders["x-user-id"];
             delete forwardedHeaders["x-user-role"];
@@ -108,6 +123,11 @@ export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: Proxy
               error: error.message,
             });
 
+            // Registra falha de rede/timeout no Circuit Breaker
+            if (fastify.recordCircuitBreakerResult) {
+              fastify.recordCircuitBreakerResult(route, 503, true);
+            }
+
             reply.status(502).send({
               statusCode: 502,
               error: "Bad Gateway",
@@ -122,7 +142,7 @@ export const proxyRouterPlugin = fp(async (fastify: FastifyInstance, opts: Proxy
     });
 
     fastify.log.info(
-      `[Gateway Route Registered] ${route.prefix} -> ${route.upstream}${route.rewritePrefix ?? ""} (Auth: ${route.authRequired}, RateLimit: ${route.rateLimit ? `${route.rateLimit.limit}req/${route.rateLimit.windowMs}ms` : "None"})`
+      `[Gateway Route Registered] ${route.prefix} -> ${route.upstream}${route.rewritePrefix ?? ""} (Auth: ${route.authRequired}, RateLimit: ${route.rateLimit ? `${route.rateLimit.limit}req` : "None"}, CircuitBreaker: ${route.circuitBreaker ? `Threshold ${route.circuitBreaker.failureThreshold ?? 5}` : "Active"})`
     );
   }
 });

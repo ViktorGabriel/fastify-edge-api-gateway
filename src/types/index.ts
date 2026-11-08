@@ -20,9 +20,6 @@ export interface JwtUserPayload {
 
 /**
  * Estratégia de extração da chave para o Rate Limiting
- * - "ip": limita com base estrita no IP do cliente
- * - "user": limita com base no ID do usuário autenticado (JWT sub)
- * - "user-or-ip": usa o ID do usuário se autenticado, caso contrário faz fallback para o IP
  */
 export type RateLimitKeyStrategy = "ip" | "user" | "user-or-ip";
 
@@ -52,6 +49,43 @@ export interface RateLimitResult {
 }
 
 /**
+ * Estados da Máquina de Estados do Circuit Breaker
+ */
+export type CircuitBreakerState = "CLOSED" | "OPEN" | "HALF-OPEN";
+
+/**
+ * Configuração de Circuit Breaker por rota/serviço upstream
+ */
+export interface CircuitBreakerConfig {
+  /** Quantidade de falhas para abrir o circuito (padrão: 5) */
+  failureThreshold?: number;
+  /** Janela móvel para contagem de falhas em ms (padrão: 10000ms = 10s) */
+  windowMs?: number;
+  /** Tempo de permanência no estado OPEN antes de testar em HALF-OPEN (padrão: 10000ms = 10s) */
+  resetTimeoutMs?: number;
+  /** Quantidade de sucessos consecutivos em HALF-OPEN para fechar o circuito (padrão: 2) */
+  halfOpenSuccessThreshold?: number;
+}
+
+/**
+ * Snapshot de telemetria do Circuit Breaker
+ */
+export interface CircuitBreakerSnapshot {
+  id: string;
+  state: CircuitBreakerState;
+  failuresCount: number;
+  failureThreshold: number;
+  consecutiveSuccesses: number;
+  halfOpenSuccessThreshold: number;
+  windowMs: number;
+  resetTimeoutMs: number;
+  lastFailureTime?: number;
+  nextAttemptTime?: number;
+  retryAfterSeconds?: number;
+  totalTrips: number;
+}
+
+/**
  * Definição declarativa de uma rota de proxy no API Gateway
  */
 export interface RouteProxyDefinition {
@@ -67,6 +101,8 @@ export interface RouteProxyDefinition {
   authRequired: boolean;
   /** Configuração declarativa de Rate Limiting via Redis Sliding Window */
   rateLimit?: RateLimitConfig;
+  /** Configuração declarativa de Circuit Breaker para resiliência do upstream */
+  circuitBreaker?: CircuitBreakerConfig;
   /** Timeout em milissegundos para a chamada ao upstream */
   timeoutMs?: number;
   /** Métodos HTTP permitidos para esta rota (se omitido, aceita todos) */

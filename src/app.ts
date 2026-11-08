@@ -6,6 +6,7 @@ import type { Redis as RedisClient } from "ioredis";
 import { requestContextPlugin } from "./plugins/request-context.plugin.js";
 import { authPlugin } from "./plugins/auth.plugin.js";
 import { rateLimiterPlugin } from "./plugins/rate-limiter.plugin.js";
+import { circuitBreakerPlugin } from "./plugins/circuit-breaker.plugin.js";
 import { proxyRouterPlugin } from "./plugins/proxy-router.plugin.js";
 import { healthPlugin } from "./plugins/health.plugin.js";
 import { routesConfig } from "./config/routes.config.js";
@@ -37,7 +38,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(cors, {
     origin: true,
     credentials: true,
-    exposedHeaders: ["x-request-id", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"],
+    exposedHeaders: [
+      "x-request-id",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+      "Retry-After",
+      "X-Circuit-Breaker-State",
+    ],
   });
   await app.register(sensible);
 
@@ -52,16 +60,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     customRedis: options.customRedis,
   });
 
-  // 5. Probes de Infraestrutura & Health Check
+  // 5. Plugin de Circuit Breaker (Resiliência Downstream & Fail-Fast 503)
+  await app.register(circuitBreakerPlugin);
+
+  // 6. Probes de Infraestrutura & Health Check
   await app.register(healthPlugin);
 
-  // 6. Roteador Declarativo de Proxy (@fastify/http-proxy)
+  // 7. Roteador Declarativo de Proxy (@fastify/http-proxy)
   const activeRoutes = options.customRoutes || routesConfig;
   await app.register(proxyRouterPlugin, {
     routes: activeRoutes,
   });
 
-  // 7. Manipulador Global de Erros Estruturados
+  // 8. Manipulador Global de Erros Estruturados
   app.setErrorHandler((error: FastifyError, request, reply) => {
     request.log.error({
       err: error,

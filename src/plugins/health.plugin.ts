@@ -39,10 +39,26 @@ export const healthPlugin = fp(async (fastify: FastifyInstance) => {
         upstream: r.upstream,
         rewritePrefix: r.rewritePrefix,
         authRequired: r.authRequired,
+        rateLimit: r.rateLimit,
+        circuitBreaker: r.circuitBreaker,
         allowedMethods: r.allowedMethods,
         description: r.description,
         tags: r.tags,
       })),
+    });
+  });
+
+  // Telemetria em tempo real do Circuit Breaker
+  fastify.get("/gateway/circuit-breakers", async (_req, reply) => {
+    const snapshots = fastify.circuitBreakers
+      ? fastify.circuitBreakers.getAllSnapshots()
+      : [];
+
+    return reply.status(200).send({
+      gateway: "Fastify Edge API Gateway",
+      timestamp: new Date().toISOString(),
+      totalCircuits: snapshots.length,
+      circuits: snapshots,
     });
   });
 
@@ -56,6 +72,7 @@ export const healthPlugin = fp(async (fastify: FastifyInstance) => {
         liveness: "/health/live",
         readiness: "/health/ready",
         routesCatalog: "/gateway/routes",
+        circuitBreakers: "/gateway/circuit-breakers",
       },
     });
   });

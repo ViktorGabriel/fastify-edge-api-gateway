@@ -9,7 +9,8 @@ import { env } from "./env.js";
  * - upstream: destino do tráfego do microsserviço.
  * - rewritePrefix: mapeamento de path para o upstream.
  * - authRequired: intercepta e valida JWT antes do proxy upstream.
- * - rateLimit: política de contenção por Sliding Window via Redis Lua.
+ * - rateLimit: contenção de vazão por Sliding Window via Redis Lua.
+ * - circuitBreaker: contenção de cascata de falhas e Fail-Fast (503).
  * - timeoutMs: resiliência e circuit protection contra saturação.
  */
 export const routesConfig: RouteProxyDefinition[] = [
@@ -24,11 +25,16 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: false,
     allowedMethods: ["POST", "GET"],
     timeoutMs: 10000,
-    // Proteção contra brute force e credential stuffing (por IP)
     rateLimit: {
       limit: 5,
-      windowMs: 60000, // 5 requisições por minuto por IP
+      windowMs: 60000,
       keyStrategy: "ip",
+    },
+    circuitBreaker: {
+      failureThreshold: 5,
+      windowMs: 10000, // 5 falhas em 10s abrem o circuito
+      resetTimeoutMs: 10000, // 10s no estado OPEN
+      halfOpenSuccessThreshold: 2,
     },
     description: "Autenticação, login e registro público de usuários",
     tags: ["auth", "public"],
@@ -41,11 +47,16 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: true,
     allowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     timeoutMs: 10000,
-    // Cota de perfil por usuário autenticado
     rateLimit: {
       limit: 100,
-      windowMs: 60000, // 100 requisições por minuto por User ID
+      windowMs: 60000,
       keyStrategy: "user-or-ip",
+    },
+    circuitBreaker: {
+      failureThreshold: 5,
+      windowMs: 10000,
+      resetTimeoutMs: 10000,
+      halfOpenSuccessThreshold: 2,
     },
     description: "Gestão de perfis e contas - Requer JWT e propaga x-user-id",
     tags: ["users", "authenticated"],
@@ -62,11 +73,16 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: false,
     allowedMethods: ["GET"],
     timeoutMs: 8000,
-    // Catálogo aberto com alta vazão
     rateLimit: {
       limit: 200,
       windowMs: 60000,
       keyStrategy: "ip",
+    },
+    circuitBreaker: {
+      failureThreshold: 5,
+      windowMs: 10000,
+      resetTimeoutMs: 10000,
+      halfOpenSuccessThreshold: 2,
     },
     description: "Catálogo de produtos aberto ao público",
     tags: ["catalog", "public"],
@@ -79,11 +95,16 @@ export const routesConfig: RouteProxyDefinition[] = [
     authRequired: true,
     allowedMethods: ["GET", "POST", "PUT", "DELETE"],
     timeoutMs: 15000,
-    // Proteção contra spam de checkout e concorrência abusiva por User ID
     rateLimit: {
       limit: 20,
       windowMs: 60000,
       keyStrategy: "user",
+    },
+    circuitBreaker: {
+      failureThreshold: 5,
+      windowMs: 10000,
+      resetTimeoutMs: 10000,
+      halfOpenSuccessThreshold: 2,
     },
     description: "Criação e consulta de pedidos - Requer JWT e propaga x-user-id",
     tags: ["orders", "authenticated"],
@@ -104,6 +125,12 @@ export const routesConfig: RouteProxyDefinition[] = [
       limit: 10,
       windowMs: 60000,
       keyStrategy: "user",
+    },
+    circuitBreaker: {
+      failureThreshold: 3, // Tolerância menor para faturamento
+      windowMs: 10000,
+      resetTimeoutMs: 15000,
+      halfOpenSuccessThreshold: 2,
     },
     description: "Operações de faturamento e notas fiscais protegidas",
     tags: ["billing", "financial", "authenticated"],
