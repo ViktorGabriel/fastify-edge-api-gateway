@@ -2,37 +2,61 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
+      - develop
 
 jobs:
   build-and-test:
+    name: Build, Typecheck & Test Suite
     runs-on: ubuntu-latest
 
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      PORT: 8080
+      HOST: 0.0.0.0
+      LOG_LEVEL: fatal
+      JWT_SECRET: super-secret-gateway-master-key-32ch!
+      JWT_ISSUER: fastify-api-gateway
+      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_KEY_PREFIX: test:gateway:ratelimit:
+      USERS_SERVICE_URL: http://127.0.0.1:3001
+      ORDERS_SERVICE_URL: http://127.0.0.1:3002
+      BILLING_SERVICE_URL: http://127.0.0.1:3003
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Código Fonte
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Setup Node.js 20.x
+      - name: Setup Node.js LTS (v22)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'pnpm'
+          node-version: 22
+          cache: "npm"
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Instalação Limpa de Dependências (npm ci)
+        run: npm ci
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Checagem Estática de Tipos (tsc --noEmit)
+        run: npm run typecheck
 
-      - name: Run Vitest Suite
-        run: pnpm test
+      - name: Execução da Suíte de Testes com Cobertura (Vitest)
+        run: npm run test:coverage
 
-      - name: Build bundle
-        run: pnpm build
+      - name: Compilação TypeScript Estrita (Build via tsc)
+        run: npm run build
